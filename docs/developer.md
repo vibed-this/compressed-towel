@@ -22,7 +22,7 @@ dist/
     requirements.txt
   assets/
     logo.png                # splash 展示的 logo
-  templates/scripts/        # 备选：随包的 hooks 示例脚本
+  scripts/                  # hooks 脚本；缺失且与内建同名时用 exe 内建版本（见第 8 节）
 ```
 
 最终用户机器上的数据目录（启动器自动创建）：
@@ -37,8 +37,10 @@ dist/
 
 - `launcher.toml` 由开发者编写并随应用分发，最终用户不直接编辑它。
 - `user.toml` 只包含白名单叶子 key，由 UI 写入，结构与优先级见第 7 节。
-- `templates/` 下的脚本只是模板；实际 hooks 路径以 `launcher.toml` 为准，
-  **可以 MAY**放在分发目录内任意位置，但**禁止 MUST NOT**超出分发目录。
+- `templates/` 下的脚本是内建进 exe 的模板来源；分发目录里的 `scripts/`
+  与模板同名即视为"外部定制"，优先使用（见第 8 节）。实际 hooks 路径
+  以 `launcher.toml` 为准，**可以 MAY**放在分发目录内任意位置，
+  但**禁止 MUST NOT**超出分发目录。
 
 ## 2. launcher.toml 全字段参考
 
@@ -90,10 +92,10 @@ prepend = ["python/Scripts", "app/bin"]
 
 ```toml
 [hooks]
-check_update = ["templates/scripts/check_update.bat"]
-install = ["${RUNTIME}", "templates/scripts/install.py"]
+check_update = ["scripts/check_update.bat"]
+install = ["${RUNTIME}", "scripts/install.py"]
 start = ["${RUNTIME}", "app/main.py"]
-end = ["templates/scripts/cleanup.bat"]
+end = ["scripts/cleanup.bat"]
 ```
 
 - 命令只允许数组写法，**禁止 MUST NOT**写成字符串。
@@ -236,6 +238,9 @@ subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "app/requir
   不要再使用。另三个（`MDL_APP_NAME`、`MDL_SPLASH_LOGO`、`MDL_LAUNCHER_LOG_LEVEL`）有效。
 - `--config <path>` **可以 MAY**指定 `launcher.toml` 的位置（默认取 exe 同目录），
   主要用于开发期调试；confinement 仍相对 exe 目录判定，不随 `--config` 改变。
+- 缺省回退：默认位置的 `launcher.toml` 缺失时，用 exe 内建的模板快照代替
+  （内容即 `launcher.template.toml`，见第 8 节），仍需按真实分发修改后才能跑通；
+  `--config` 显式指定的文件缺失则依然报错（显式路径拼错应 loud 失败）。
 - `check` 子命令校验并预演解析，不运行任何 hooks：
 
 ```text
@@ -247,7 +252,36 @@ launcher.exe --config D:\app\launcher.toml check
 hooks 数组形状、`RUNTIME` 显示（取自合并后 `[env]`，无则显示未配置），以及
 `logo` / 各 hook `argv[0]` 展开后程序文件是否存在（不存在即报错，运行时指错在此暴露）。
 
-## 8. pack（后续计划，未实现）
+## 8. 内建资源与外部覆盖
+
+构建期 `build.rs` 扫描 `templates/` 生成清单，`src/embedded.rs` 用 `include_str!`
+编入 exe（零新依赖）。含两部分：`templates/` 下全部脚本（键为相对 `templates/`
+的正斜杠路径，如 `scripts/check_update.bat`）与默认配置（`launcher.template.toml`
+快照，见 `embedded::DEFAULT_LAUNCHER_TOML`）。
+
+规则：
+
+1. 外部优先：外部同名文件存在即用外部，内建只做缺省回退。
+2. `logo` 与 `[env.PATH].prepend` 不参与回退；logo 缺失只显示文字，不报错。
+3. 解压目录在系统临时目录下（`mdl-embedded-<应用>-<pid>`），只解压本轮实际
+   引用的脚本；`end` 跑完后删除，`check` 退出前同样清理；crash 残留只清
+   mtime 超过一天的，并发实例不受影响。
+
+## 9. macOS .app 打包
+
+`sh tools/macos/pack-app.sh`（可配 `APP_NAME` / `BUNDLE_ID`，版本取 `Cargo.toml`）
+产出 `target/release/<AppName>.app`：二进制进 `Contents/MacOS/`，
+`launcher.toml` 与 `scripts/` 进 `Contents/Resources/`，
+`Info.plist` 由 `tools/macos/Info.plist.template` 渲染。
+
+- 运行在 `.app` 内（`Name.app/Contents/MacOS/<bin>`）时资源根目录自动指向
+  同包的 `Contents/Resources`；裸二进制行为不变。`--config` 仍可指向包外配置覆盖。
+- 图标由下游提供：把 `.icns` 丢进 `Contents/Resources`，取消 `Info.plist` 里
+  图标段的注释并改成实际文件名；无图标时不声明，双击照常可用。
+- 只有本地 ad-hoc 签名（`codesign -s -`）；分发到别的机器各自右键打开过
+  Gatekeeper。正式 Developer ID 签名与公证、`dmg` 均为后续事项。
+
+## 10. pack（后续计划，未实现）
 
 `pack` 用于把分发目录打成单文件安装包或压缩包，当前版本**尚未实现**，
 **禁止 MUST NOT**在脚本或文档中假设它存在。
@@ -256,7 +290,7 @@ hooks 数组形状、`RUNTIME` 显示（取自合并后 `[env]`，无则显示�
 - 在 `pack` 落地前，分发方式为直接复制分发目录（含 `python/`）。
 - 本节在 `pack` 实现后更新，在此之前以本段为准。
 
-## 9. FAQ
+## 11. FAQ
 
 ### 路径缺失：启动直接报错说 start 缺配？
 
