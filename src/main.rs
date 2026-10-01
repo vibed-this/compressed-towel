@@ -1,4 +1,5 @@
 mod config;
+mod embedded;
 mod runner;
 
 use std::path::{Path, PathBuf};
@@ -10,9 +11,27 @@ slint::include_modules!();
 const MAX_OUTPUT_LINES: usize = 500;
 
 fn exe_dir() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+    match std::env::current_exe() {
+        Ok(exe) => resolve_exe_dir(&exe),
+        Err(_) => PathBuf::from("."),
+    }
+}
+
+/// 解析资源根目录：在 `Name.app/Contents/MacOS/<bin>` 内运行时指向
+/// 同包的 `Contents/Resources`（打包脚本把配置与脚本放在那里）；
+/// 其余情况指向可执行文件所在目录，裸包逻辑零影响。
+fn resolve_exe_dir(exe: &Path) -> PathBuf {
+    if let Some(macos) = exe.parent()
+        && macos.file_name().is_some_and(|n| n == "MacOS")
+        && let Some(contents) = macos.parent()
+        && contents.file_name().is_some_and(|n| n == "Contents")
+        && let Some(bundle) = contents.parent()
+        && bundle.extension().is_some_and(|e| e == "app")
+    {
+        return contents.join("Resources");
+    }
+    exe.parent()
+        .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -120,9 +139,13 @@ fn main() {
                     }
                 }
                 match verify_files(&cfg) {
-                    Ok(()) => println!("校验通过"),
+                    Ok(()) => {
+                        println!("校验通过");
+                        cfg.cleanup_embedded();
+                    }
                     Err(problems) => {
                         eprintln!("校验失败：\n{problems}");
+                        cfg.cleanup_embedded();
                         std::process::exit(1);
                     }
                 }
@@ -280,5 +303,34 @@ fn cli_config_or_default(cli_config: &Option<PathBuf>) -> String {
     match cli_config {
         Some(path) => path.display().to_string(),
         None => "默认位置".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_bundle_resolves_to_resources() {
+        let exe = Path::new("/Applications/MyApp.app/Contents/MacOS/MyApp");
+        assert_eq!(
+            resolve_exe_dir(exe),
+            PathBuf::from("/Applications/MyApp.app/Contents/Resources")
+        );
+    }
+
+    #[test]
+    fn plain_binary_resolves_to_own_dir() {
+        let exe = Path::new("/opt/dist/my_dist_launcher");
+        assert_eq!(resolve_exe_dir(exe), PathBuf::from("/opt/dist"));
+    }
+
+    #[test]
+    fn lookalike_path_without_app_suffix_stays_plain() {
+        let exe = Path::new("/opt/NotApp/Contents/MacOS/tool");
+        assert_eq!(
+            resolve_exe_dir(exe),
+            PathBuf::from("/opt/NotApp/Contents/MacOS")
+        );
     }
 }

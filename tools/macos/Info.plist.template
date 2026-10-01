@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>@APP_NAME@</string>
+    <key>CFBundleDisplayName</key>
+    <string>@APP_NAME@</string>
+    <key>CFBundleIdentifier</key>
+    <string>@BUNDLE_ID@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleExecutable</key>
+    <string>@APP_NAME@</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <!-- 图标（下游提供 .icns 后启用）：把 <AppName>.icns 放进 Contents/Resources，
+         取消下面两行的注释，并把文件名换成实际的 icns 文件名。
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    -->
+</dict>
+</plist>
