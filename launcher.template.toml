@@ -1,0 +1,57 @@
+# MyDistLauncher 分发配置模板
+#
+# 使用方法：复制为分发目录下的 launcher.toml 后按应用修改。
+# 分发目录示例：launcher.exe + launcher.toml + python/ + app/ + assets/logo.png
+#
+# 约定（启动器行为）：
+# - 命令只允许数组写法，不支持字符串写法。
+# - 只支持 ${VAR} 大括号形式，两阶段单遍展开：阶段一解 [env] 自身的值（只认父进程环境，兄弟项不可见），阶段二解 hook argv（含 argv[0]）、PATH.prepend、logo（先查阶段一结果，未命中回落父进程环境，再未命中展空）。
+# - 输出 **必须 MUST**是 UTF-8，启动器不做 GBK 猜测（bat / ps1 / py 写法见 docs/developer.md）。
+# - 相对路径相对 exe 所在目录解析，且 **禁止 MUST NOT**逃逸分发目录。
+# - 缺配跳过：只有 [hooks].start 缺配会报错，其余三段缺配直接跳过。
+
+[app]
+# 应用名：显示在 splash 上，同时决定用户数据目录名（%APPDATA%/<AppName>/）。
+name = "MyApp"
+# 应用版本：仅展示与日志记录，不参与启动逻辑。
+version = "0.1.0"
+
+[splash]
+# logo 路径（相对 exe 目录）。缺配或文件缺失时只显示文字，不报错。
+logo = "assets/logo.png"
+
+[env]
+# 注入给全部 hooks 子进程的环境变量（键值均为字符串）。
+# RUNTIME 为运行时路径，可换任意运行时，不限 python；经 ${RUNTIME} 引用并注入子进程环境。
+RUNTIME = "python/python.exe"
+# PYTHONUTF8 **推荐 RECOMMENDED**保持为 1，使 Python 子进程默认用 UTF-8。
+PYTHONUTF8 = "1"
+PYTHONIOENCODING = "utf-8"
+# 业务自定义变量示例：hooks 里以 ${MYAPP_MODE} 引用。
+MYAPP_MODE = "prod"
+
+[env.PATH]
+# PATH 追加写法：数组元素为相对 exe 目录或绝对路径，插到 PATH 最前面。
+prepend = ["python/Scripts", "app/bin"]
+
+[hooks]
+# 四段全部为命令数组（argv 形式）。需要 shell 特性请写成脚本文件再引用。
+# .bat 由启动器自动经 cmd /C 跑，.ps1 经 powershell 跑，不要自己再包一层。
+# 子进程 stdin 为 null，只展示输出，不交互。
+
+# 更新检查：缺配跳过；非零退出即中止，后续段（含 end）不再跑。
+check_update = ["templates/scripts/check_update.bat"]
+# 依赖安装：缺配跳过；非零退出即中止。Python 脚本示例用 sys.executable 口吻。
+install = ["${RUNTIME}", "templates/scripts/install.py"]
+# 应用主进程：缺配报错；启动器关闭 splash 并 wait 等待它退出。
+# start 退出后（无论退出码）仍会跑 end；start 的退出码决定最终透传值（end 成功时）。
+start = ["${RUNTIME}", "app/main.py"]
+# 退出清理：应用退出后重现 splash 再跑；check/install 非零中止时不跑。
+# end 自身非零则最终退出码为 end 的码。
+end = ["templates/scripts/cleanup.bat"]
+
+[launcher]
+# 日志级别：trace | debug | info | warn | error。缺配用 info。
+log_level = "info"
+# 用户经 UI 可改的白名单：仅叶子 key 的点分路径，且仅对 user.toml 生效。
+user_editable = ["launcher.log_level"]
