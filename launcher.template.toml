@@ -1,4 +1,4 @@
-# MyDistLauncher 分发配置模板
+# Compressed towel 分发配置模板
 #
 # 使用方法：复制为分发目录下的 launcher.toml 后按应用修改。
 # 分发目录示例：launcher.exe + launcher.toml + python/ + app/ + scripts/ + assets/logo.png

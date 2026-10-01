@@ -591,6 +591,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "compressed_towel"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "slint",
+ "slint-build",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2422,17 +2433,6 @@ dependencies = [
  "png",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "my_dist_launcher"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "serde",
- "slint",
- "slint-build",
- "toml 0.8.23",
 ]
 
 [[package]]

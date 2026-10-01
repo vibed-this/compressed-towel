@@ -1,4 +1,4 @@
-# MyDistLauncher 开发者文档
+# Compressed towel 开发者文档
 
 面向分发应用的开发者：说明分发目录怎么摆、`launcher.toml` 怎么写、hooks 脚本怎么写。
 最终用户只经 UI 改白名单项，不直接读本文。
@@ -225,17 +225,17 @@ subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "app/requir
 优先级（从低到高）：
 
 ```text
-内置默认 < launcher.toml < user.toml（仅白名单叶子 key）< MDL_* 环境变量
+内置默认 < launcher.toml < user.toml（仅白名单叶子 key）< CT_* 环境变量
 ```
 
 - `user.toml` 只接受 `[launcher].user_editable` 列出的叶子 key，
   非白名单 key 会导致启动报错。
-- `MDL_*` 环境变量优先级最高，仅支持以下四个：
-  `MDL_APP_NAME`、`MDL_SPLASH_LOGO`、`MDL_PYTHON_PATH`、`MDL_LAUNCHER_LOG_LEVEL`，
-  例如 `MDL_LAUNCHER_LOG_LEVEL=debug` 覆盖 `launcher.log_level`。
-  其中 `MDL_PYTHON_PATH` 已失效：它改写合并表中的 `python.path` 叶子，
+- `CT_*` 环境变量优先级最高，仅支持以下四个：
+  `CT_APP_NAME`、`CT_SPLASH_LOGO`、`CT_PYTHON_PATH`、`CT_LAUNCHER_LOG_LEVEL`，
+  例如 `CT_LAUNCHER_LOG_LEVEL=debug` 覆盖 `launcher.log_level`。
+  其中 `CT_PYTHON_PATH` 已失效：它改写合并表中的 `python.path` 叶子，
   而表解析已删除 `[python]` 节，效果是被静默忽略；名字保留占位以不断旧脚本，
-  不要再使用。另三个（`MDL_APP_NAME`、`MDL_SPLASH_LOGO`、`MDL_LAUNCHER_LOG_LEVEL`）有效。
+  不要再使用。另三个（`CT_APP_NAME`、`CT_SPLASH_LOGO`、`CT_LAUNCHER_LOG_LEVEL`）有效。
 - `--config <path>` **可以 MAY**指定 `launcher.toml` 的位置（默认取 exe 同目录），
   主要用于开发期调试；confinement 仍相对 exe 目录判定，不随 `--config` 改变。
 - 缺省回退：默认位置的 `launcher.toml` 缺失时，用 exe 内建的模板快照代替
@@ -263,7 +263,7 @@ hooks 数组形状、`RUNTIME` 显示（取自合并后 `[env]`，无则显示�
 
 1. 外部优先：外部同名文件存在即用外部，内建只做缺省回退。
 2. `logo` 与 `[env.PATH].prepend` 不参与回退；logo 缺失只显示文字，不报错。
-3. 解压目录在系统临时目录下（`mdl-embedded-<应用>-<pid>`），只解压本轮实际
+3. 解压目录在系统临时目录下（`ct-embedded-<应用>-<pid>`），只解压本轮实际
    引用的脚本；`end` 跑完后删除，`check` 退出前同样清理；crash 残留只清
    mtime 超过一天的，并发实例不受影响。
 

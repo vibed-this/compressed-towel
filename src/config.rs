@@ -50,7 +50,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            name: "MyDistLauncher".to_string(),
+            name: "Compressed towel".to_string(),
             version: None,
         }
     }
@@ -436,9 +436,9 @@ fn set_dotted(root: &mut toml::Value, leaf: &str, val: String) {
 }
 
 const ENV_OVERRIDES: [(&str, &str); 3] = [
-    ("app.name", "MDL_APP_NAME"),
-    ("splash.logo", "MDL_SPLASH_LOGO"),
-    ("launcher.log_level", "MDL_LAUNCHER_LOG_LEVEL"),
+    ("app.name", "CT_APP_NAME"),
+    ("splash.logo", "CT_SPLASH_LOGO"),
+    ("launcher.log_level", "CT_LAUNCHER_LOG_LEVEL"),
 ];
 
 fn apply_env_overrides(merged: &mut toml::Value) {
@@ -488,9 +488,9 @@ fn assemble(
     })?;
 
     let app_name = match section_table(root, "app", main_path)? {
-        None => "MyDistLauncher".to_string(),
+        None => "Compressed towel".to_string(),
         Some(t) => get_opt_string(t, "app", "name", main_path)?
-            .unwrap_or_else(|| "MyDistLauncher".to_string()),
+            .unwrap_or_else(|| "Compressed towel".to_string()),
     };
     let app_version = match section_table(root, "app", main_path)? {
         None => None,
@@ -702,7 +702,7 @@ impl Config {
             .and_then(|v| v.as_table())
             .and_then(|t| t.get("name"))
             .and_then(|v| v.as_str())
-            .unwrap_or("MyDistLauncher")
+            .unwrap_or("Compressed towel")
             .to_string();
         let user_path = dirs::data_dir().map(|d| d.join(&app_name).join("user.toml"));
         let user_overlay = match user_path {
@@ -805,7 +805,7 @@ fn falls_back_to_embedded(exe_dir: &Path, program: &str) -> bool {
     !exe_dir.join(p).exists() && crate::embedded::contains(program)
 }
 
-const EMBEDDED_DIR_PREFIX: &str = "mdl-embedded-";
+const EMBEDDED_DIR_PREFIX: &str = "ct-embedded-";
 const EMBEDDED_STALE_AFTER_SECS: u64 = 24 * 60 * 60;
 
 fn sanitize_app_name(name: &str) -> String {
@@ -916,8 +916,7 @@ mod tests {
 
     fn temp_exe_dir(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir =
-            std::env::temp_dir().join(format!("mdl_cfg_{}_{}_{}", std::process::id(), tag, n));
+        let dir = std::env::temp_dir().join(format!("ct_cfg_{}_{}_{}", std::process::id(), tag, n));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -962,13 +961,13 @@ mod tests {
     #[test]
     fn env_vars_expand() {
         unsafe {
-            std::env::set_var("MDL_TEST_VAR_X", "hello");
+            std::env::set_var("CT_TEST_VAR_X", "hello");
         }
         let exe = temp_exe_dir("expand");
         let main_path = exe.join("launcher.toml");
         write_file(
             &main_path,
-            "[app]\nname = \"ExpandApp\"\n[hooks]\nstart = [\"run-${MDL_TEST_VAR_X}\"]\n[env]\nGREETING = \"hi-${MDL_TEST_VAR_X}\"\n[launcher]\nlog_level = \"info\"\n",
+            "[app]\nname = \"ExpandApp\"\n[hooks]\nstart = [\"run-${CT_TEST_VAR_X}\"]\n[env]\nGREETING = \"hi-${CT_TEST_VAR_X}\"\n[launcher]\nlog_level = \"info\"\n",
         );
         let cfg = load_with_files(&exe, &main_path, None).unwrap();
         let start = cfg.hooks.start.clone().unwrap();
@@ -988,7 +987,7 @@ mod tests {
                 .any(|(k, v)| k == "GREETING" && v == &OsString::from("hi-hello"))
         );
         unsafe {
-            std::env::remove_var("MDL_TEST_VAR_X");
+            std::env::remove_var("CT_TEST_VAR_X");
         }
         let _ = fs::remove_dir_all(&exe);
     }
@@ -1028,7 +1027,7 @@ mod tests {
     #[test]
     fn env_override_wins_over_files() {
         unsafe {
-            std::env::set_var("MDL_LAUNCHER_LOG_LEVEL", "debug");
+            std::env::set_var("CT_LAUNCHER_LOG_LEVEL", "debug");
         }
         let exe = temp_exe_dir("envovr");
         let main_path = exe.join("launcher.toml");
@@ -1039,7 +1038,7 @@ mod tests {
         let cfg = load_with_files(&exe, &main_path, None).unwrap();
         assert_eq!(cfg.launcher.log_level, "debug");
         unsafe {
-            std::env::remove_var("MDL_LAUNCHER_LOG_LEVEL");
+            std::env::remove_var("CT_LAUNCHER_LOG_LEVEL");
         }
         let _ = fs::remove_dir_all(&exe);
     }
@@ -1078,23 +1077,23 @@ mod tests {
     #[test]
     fn env_config_wins_over_process_env() {
         unsafe {
-            std::env::set_var("MDL_T_VAR_Q", "from-parent");
+            std::env::set_var("CT_T_VAR_Q", "from-parent");
         }
         let exe = temp_exe_dir("cfgwin");
         let main_path = exe.join("launcher.toml");
         write_file(
             &main_path,
-            "[app]\nname = \"CfgWinApp\"\n[env]\nMDL_T_VAR_Q = \"from-config\"\n[hooks]\nstart = [\"${MDL_T_VAR_Q}/run\"]\n",
+            "[app]\nname = \"CfgWinApp\"\n[env]\nCT_T_VAR_Q = \"from-config\"\n[hooks]\nstart = [\"${CT_T_VAR_Q}/run\"]\n",
         );
         let cfg = load_with_files(&exe, &main_path, None).unwrap();
         assert_eq!(
-            cfg.resolved_env.get("MDL_T_VAR_Q").map(String::as_str),
+            cfg.resolved_env.get("CT_T_VAR_Q").map(String::as_str),
             Some("from-config")
         );
         let start = cfg.hooks.start.clone().unwrap();
         assert_eq!(start[0], "from-config/run");
         unsafe {
-            std::env::remove_var("MDL_T_VAR_Q");
+            std::env::remove_var("CT_T_VAR_Q");
         }
         let _ = fs::remove_dir_all(&exe);
     }
@@ -1102,17 +1101,17 @@ mod tests {
     #[test]
     fn env_sibling_refs_do_not_expand() {
         unsafe {
-            std::env::remove_var("MDL_T_SIB_B_Q");
+            std::env::remove_var("CT_T_SIB_B_Q");
         }
         let exe = temp_exe_dir("sib");
         let main_path = exe.join("launcher.toml");
         write_file(
             &main_path,
-            "[app]\nname = \"SibApp\"\n[env]\nMDL_T_SIB_A_Q = \"${MDL_T_SIB_B_Q}\"\n[hooks]\nstart = [\"run\"]\n",
+            "[app]\nname = \"SibApp\"\n[env]\nCT_T_SIB_A_Q = \"${CT_T_SIB_B_Q}\"\n[hooks]\nstart = [\"run\"]\n",
         );
         let cfg = load_with_files(&exe, &main_path, None).unwrap();
         assert_eq!(
-            cfg.resolved_env.get("MDL_T_SIB_A_Q").map(String::as_str),
+            cfg.resolved_env.get("CT_T_SIB_A_Q").map(String::as_str),
             Some("")
         );
         let _ = fs::remove_dir_all(&exe);
@@ -1176,7 +1175,7 @@ mod tests {
     #[test]
     fn sweep_keeps_fresh_and_foreign_dirs() {
         let root = temp_exe_dir("sweep");
-        let fresh = root.join("mdl-embedded-SweepApp-999999");
+        let fresh = root.join("ct-embedded-SweepApp-999999");
         let foreign = root.join("something-else-entirely");
         fs::create_dir_all(&fresh).unwrap();
         fs::create_dir_all(&foreign).unwrap();

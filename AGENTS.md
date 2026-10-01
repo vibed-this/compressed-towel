@@ -1,4 +1,4 @@
-# AGENTS.md — MyDistLauncher 项目规范
+# AGENTS.md — Compressed towel 项目规范
 
 本项目栈为 Rust + Slint（桌面空窗口启动器）。
 
@@ -29,4 +29,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 - Slint 取舍（见 `Cargo.toml`）：`backend-winit` + 纯 `renderer-software`（最小体积，无 OpenGL 依赖），
   `release` 用 `opt-level = "z" + lto + strip + panic = "abort"`。如需 GPU 特效 / `drop-shadow` /
   旋转缩放，改回 `renderer-femtovg` 需经用户确认（体积会明显回升）。
-- 构建：`cargo build --release`；产物 `target/release/my_dist_launcher` **禁止 MUST NOT**入库（`target/` 已在 `.gitignore` 声明）。
+- 构建：`cargo build --release`；产物 `target/release/compressed_towel` **禁止 MUST NOT**入库（`target/` 已在 `.gitignore` 声明）。

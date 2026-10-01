@@ -74,7 +74,7 @@ fn print_usage(program: &str) {
 fn main() {
     let program = std::env::args()
         .next()
-        .unwrap_or_else(|| "my_dist_launcher".into());
+        .unwrap_or_else(|| "compressed_towel".into());
     let mut cli_config: Option<PathBuf> = None;
     let mut check_mode = false;
     let mut args = std::env::args().skip(1);
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn plain_binary_resolves_to_own_dir() {
-        let exe = Path::new("/opt/dist/my_dist_launcher");
+        let exe = Path::new("/opt/dist/compressed_towel");
         assert_eq!(resolve_exe_dir(exe), PathBuf::from("/opt/dist"));
     }
 
