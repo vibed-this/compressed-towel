@@ -230,12 +230,10 @@ subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "app/requir
 
 - `user.toml` 只接受 `[launcher].user_editable` 列出的叶子 key，
   非白名单 key 会导致启动报错。
-- `CT_*` 环境变量优先级最高，仅支持以下四个：
-  `CT_APP_NAME`、`CT_SPLASH_LOGO`、`CT_PYTHON_PATH`、`CT_LAUNCHER_LOG_LEVEL`，
+- `CT_*` 环境变量优先级最高，仅支持以下三个：
+  `CT_APP_NAME`、`CT_SPLASH_LOGO`、`CT_LAUNCHER_LOG_LEVEL`，
   例如 `CT_LAUNCHER_LOG_LEVEL=debug` 覆盖 `launcher.log_level`。
-  其中 `CT_PYTHON_PATH` 已失效：它改写合并表中的 `python.path` 叶子，
-  而表解析已删除 `[python]` 节，效果是被静默忽略；名字保留占位以不断旧脚本，
-  不要再使用。另三个（`CT_APP_NAME`、`CT_SPLASH_LOGO`、`CT_LAUNCHER_LOG_LEVEL`）有效。
+  Python 供给走 `[python]` 节（见第 9 节），不要用环境变量改运行时路径。
 - `--config <path>` **可以 MAY**指定 `launcher.toml` 的位置（默认取 exe 同目录），
   主要用于开发期调试；confinement 仍相对 exe 目录判定，不随 `--config` 改变。
 - 缺省回退：默认位置的 `launcher.toml` 缺失时，用 exe 内建的模板快照代替
@@ -267,7 +265,41 @@ hooks 数组形状、`RUNTIME` 显示（取自合并后 `[env]`，无则显示�
    引用的脚本；`end` 跑完后删除，`check` 退出前同样清理；crash 残留只清
    mtime 超过一天的，并发实例不受影响。
 
-## 9. macOS .app 打包
+## 9. Python 模式（可选供给）
+
+`[python]` 缺配或 `enable = false` 时启动器为通用模式（行为不变）；
+启用后在 `check_update` 之前插入供给阶段，顺序为
+运行时 → uv → 业务单包，任一步失败即中止（`end` 不跑，splash 显示失败）。
+
+```toml
+[python]
+enable = true
+source = "python-build-standalone"  # 全平台默认；winpython 仅 Win 且未内建归档表
+version = "3.12.14"                 # 必须命中内建归档表，否则用 custom
+runtime_path = "python/python.exe"  # confinement 内；[env].RUNTIME 指向它
+package = "myapp==1.2.3"            # 唯一业务包；也支持 "myapp @ https://.../*.whl"
+index_url = "https://pypi.org/simple"
+```
+
+规则：
+
+1. 只装**一个**业务包，且**必须 MUST**是远端 wheel：安装口吻固定为
+   `uv pip install --python <runtime> --only-binary :all: …`，
+   sdist 落盘即拒绝。依赖闭包由业务包的 `Requires-Dist` 在远端决定。
+2. `uv` 强制：版本由启动器 pin（不暴露配置），无 `pip` 回退；
+   失败信息中的 `index_url` 脱敏显示（隐藏 userinfo）。
+3. 下载经启动器内建 HTTP（ureq）完成，文件名、进度、速度显示在
+   splash 进度条上；归档经 sha256 校验后解压，`.part` 半截文件不落盘；
+   `python/.provision-ok-*` 命中且文件存在时跳过（幂等）。
+4. 私服鉴权不写明文：`index_url` 里用 `${VAR}` 引用父进程环境
+   （如 `"https://${PIP_TOKEN}@mirror.example/simple"`），展开规则见第 3 节；
+   `http` 内网源另配 `trusted_host`，`https` 不配。
+5. `source = "system"` 只校验本机运行时（大版本不低于配置），不下载；
+   `winpython` 未内建归档表，改用 `source = "custom"` 并提供 `url` + `sha256`。
+6. `check` 显示 `[python]` 解析结果（source/version/package/脱敏 index/runtime），
+   不做网络探测；`runtime_path` 同样受第 4 节 confinement 约束。
+
+## 10. macOS .app 打包
 
 `sh tools/macos/pack-app.sh`（可配 `APP_NAME` / `BUNDLE_ID`，版本取 `Cargo.toml`）
 产出 `target/release/<AppName>.app`：二进制进 `Contents/MacOS/`，
@@ -281,7 +313,7 @@ hooks 数组形状、`RUNTIME` 显示（取自合并后 `[env]`，无则显示�
 - 只有本地 ad-hoc 签名（`codesign -s -`）；分发到别的机器各自右键打开过
   Gatekeeper。正式 Developer ID 签名与公证、`dmg` 均为后续事项。
 
-## 10. pack（后续计划，未实现）
+## 11. pack（后续计划，未实现）
 
 `pack` 用于把分发目录打成单文件安装包或压缩包，当前版本**尚未实现**，
 **禁止 MUST NOT**在脚本或文档中假设它存在。
@@ -290,7 +322,7 @@ hooks 数组形状、`RUNTIME` 显示（取自合并后 `[env]`，无则显示�
 - 在 `pack` 落地前，分发方式为直接复制分发目录（含 `python/`）。
 - 本节在 `pack` 实现后更新，在此之前以本段为准。
 
-## 11. FAQ
+## 12. FAQ
 
 ### 路径缺失：启动直接报错说 start 缺配？
 
@@ -303,6 +335,14 @@ hooks 数组形状、`RUNTIME` 显示（取自合并后 `[env]`，无则显示�
 `${RUNTIME}` 取自合并后 `[env]` 的 `RUNTIME`。检查该值文件是否存在、
 是否为相对 exe 目录的有效路径；用了裸命令名时检查 `[env.PATH].prepend`
 是否包含其目录。`check` 会逐项报告解析结果。
+
+### Python 模式：供给阶段失败？
+
+先跑 `launcher.exe check` 看 `[python]` 解析行：source/version 是否在
+内建表内、package 是否单个合法 spec、runtime_path 是否落在分发目录内。
+`version` 不在表内时换受支持版本或改 `custom`；`uv 安装失败` 看退出码与
+日志里的包名（index 已脱敏，token 不会进日志）。供给成功后
+`python/.provision-ok-*` 存在即跳过下载，改版本后才重新供给。
 
 ### 乱码：中文输出变成问号或方块？
 
