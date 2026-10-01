@@ -1,4 +1,4 @@
-# Compressed towel 开发者文档
+# CompressedTowel 开发者文档
 
 面向分发应用的开发者：说明分发目录怎么摆、`launcher.toml` 怎么写、hooks 脚本怎么写。
 最终用户只经 UI 改白名单项，不直接读本文。

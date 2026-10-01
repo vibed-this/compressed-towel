@@ -50,7 +50,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            name: "Compressed towel".to_string(),
+            name: "CompressedTowel".to_string(),
             version: None,
         }
     }
@@ -488,9 +488,9 @@ fn assemble(
     })?;
 
     let app_name = match section_table(root, "app", main_path)? {
-        None => "Compressed towel".to_string(),
+        None => "CompressedTowel".to_string(),
         Some(t) => get_opt_string(t, "app", "name", main_path)?
-            .unwrap_or_else(|| "Compressed towel".to_string()),
+            .unwrap_or_else(|| "CompressedTowel".to_string()),
     };
     let app_version = match section_table(root, "app", main_path)? {
         None => None,
@@ -702,7 +702,7 @@ impl Config {
             .and_then(|v| v.as_table())
             .and_then(|t| t.get("name"))
             .and_then(|v| v.as_str())
-            .unwrap_or("Compressed towel")
+            .unwrap_or("CompressedTowel")
             .to_string();
         let user_path = dirs::data_dir().map(|d| d.join(&app_name).join("user.toml"));
         let user_overlay = match user_path {
