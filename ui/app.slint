@@ -1,5 +1,102 @@
 export component App inherits Window {
-    title: "MyDistLauncher";
-    width: 800px;
-    height: 600px;
+    title: root.app-name;
+    width: 480px;
+    height: 360px;
+
+    in property <string> app-name: "MyDistLauncher";
+    in property <string> status-text: "正在准备…";
+    in property <string> output-text: "";
+    in property <bool> is-error: false;
+    in property <bool> has-logo: false;
+    in property <image> logo;
+
+    callback close-clicked();
+
+    changed output-text => {
+        log-view.content-y = min(0px, log-view.height - log-view.content-height);
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+
+        HorizontalLayout {
+            spacing: 12px;
+
+            if root.has-logo : Image {
+                source: root.logo;
+                width: 48px;
+                height: 48px;
+                image-fit: contain;
+            }
+
+            Text {
+                text: root.app-name;
+                font-size: 20px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+        }
+
+        Text {
+            text: root.status-text;
+            font-size: 14px;
+            color: root.is-error ? #c0392b : #333333;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            background: #f5f5f5;
+            border-width: 1px;
+            border-color: #cccccc;
+            border-radius: 4px;
+            vertical-stretch: 1;
+            clip: true;
+
+            log-view := Flickable {
+                x: 4px;
+                y: 4px;
+                width: parent.width - 8px;
+                height: parent.height - 8px;
+                content-width: self.width;
+                content-height: log-text.height;
+
+                log-text := Text {
+                    x: 0px;
+                    y: 0px;
+                    width: log-view.width;
+                    text: root.output-text;
+                    font-size: 12px;
+                    color: #222222;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        if root.is-error : HorizontalLayout {
+            alignment: end;
+
+            Rectangle {
+                width: 96px;
+                height: 32px;
+                background: touch.has-hover ? #d63026 : #c0392b;
+                border-radius: 4px;
+
+                Text {
+                    text: "关闭";
+                    color: #ffffff;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                touch := TouchArea {
+                    clicked => {
+                        root.close-clicked();
+                    }
+                }
+            }
+        }
+    }
 }
