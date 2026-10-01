@@ -98,6 +98,7 @@ pub struct Config {
     pub env: EnvConfig,
     pub resolved_env: HashMap<String, String>,
     pub launcher: LauncherConfig,
+    pub python: Option<crate::python::PythonConfig>,
     pub exe_dir: PathBuf,
     pub log_dir: PathBuf,
     /// 内建脚本解压目录（外部同名文件缺失时回退）；无回退需求时为 None。
@@ -115,7 +116,7 @@ fn parse_toml_file(path: &Path) -> Result<toml::Value, ConfigError> {
     })
 }
 
-fn expand_process_env(input: &str) -> String {
+pub(crate) fn expand_process_env(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0;
     while i < input.len() {
@@ -145,7 +146,7 @@ fn expand_process_env(input: &str) -> String {
     out
 }
 
-fn expand_with_resolved(input: &str, resolved: &HashMap<String, String>) -> String {
+pub(crate) fn expand_with_resolved(input: &str, resolved: &HashMap<String, String>) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0;
     while i < input.len() {
@@ -656,6 +657,17 @@ fn assemble(
         confine_joined(exe_dir, entry, false, main_path, "[env.PATH] prepend")?;
     }
 
+    let python = crate::python::PythonConfig::parse(root, main_path, &resolved_env)?;
+    if let Some(py) = &python {
+        confine_joined(
+            exe_dir,
+            &py.runtime_path,
+            false,
+            main_path,
+            "[python] runtime_path",
+        )?;
+    }
+
     let data_dir = dirs::data_dir().ok_or_else(|| ConfigError::Missing {
         file: main_path.to_path_buf(),
         message: "cannot determine data dir for log_dir".to_string(),
@@ -669,6 +681,7 @@ fn assemble(
         env,
         resolved_env,
         launcher: launcher_raw,
+        python,
         exe_dir: exe_dir.to_path_buf(),
         log_dir,
         embedded_dir: None,

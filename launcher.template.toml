@@ -58,3 +58,25 @@ end = ["scripts/cleanup.bat"]
 log_level = "info"
 # 用户经 UI 可改的白名单：仅叶子 key 的点分路径，且仅对 user.toml 生效。
 user_editable = ["launcher.log_level"]
+
+# [python] 缺配即通用启动器（本节全部注释时行为与旧版完全一致）。
+# 启用后在 check_update 之前插入供给阶段：便携运行时 → uv → 业务单包，
+# 任一步失败即中止（end 不跑）。下载进度显示在 splash 进度条上。
+#
+# [python]
+# enable = true
+# # 供给源：python-build-standalone（默认，全平台）| winpython（仅 Win，未内建归档表，需 custom 方式）| system（本机，不下载）| custom（内网归档）。
+# source = "python-build-standalone"
+# # 版本必须命中内建归档表（当前：3.12.14），否则改用 custom 提供 url/sha256。
+# version = "3.12.14"
+# # custom 源必填（官方源忽略）：
+# # url = "https://mirror.example/python-3.12.14-win64.tar.gz"
+# # sha256 = "..."
+# # 运行时相对路径（confinement 内）；建议 [env].RUNTIME 指向它。
+# runtime_path = "python/python.exe"
+# # 唯一业务包：远端 wheel（官方 PyPI / 自定义 server / 直接 URL 三选一）。
+# package = "myapp==1.2.3"
+# # 包来源缺配即官方 PyPI；直接 URL 形式（"myapp @ https://..."）忽略本项。
+# index_url = "https://pypi.org/simple"
+# # 仅 http 内网源需要；https 不配。鉴权走 ${VAR} 引用父进程环境，不写明文。
+# # trusted_host = "mirror.example"

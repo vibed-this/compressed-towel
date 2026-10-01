@@ -14,12 +14,35 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// 上报给界面层的生命周期事件。
 #[derive(Debug, Clone)]
 pub enum UiEvent {
-    HookStarted { name: &'static str },
-    OutputLine { line: String },
+    HookStarted {
+        name: &'static str,
+    },
+    OutputLine {
+        line: String,
+    },
+    ProvisionStarted {
+        file: String,
+        total: Option<u64>,
+    },
+    ProvisionProgress {
+        file: String,
+        downloaded: u64,
+        total: Option<u64>,
+        bps: u64,
+    },
+    ProvisionDone {
+        file: String,
+    },
     AppStarted,
-    AppExited { code: i32 },
-    LifecycleDone { code: i32 },
-    FatalError { message: String },
+    AppExited {
+        code: i32,
+    },
+    LifecycleDone {
+        code: i32,
+    },
+    FatalError {
+        message: String,
+    },
 }
 
 /// 执行完整生命周期并阻塞直到结束。
@@ -72,6 +95,11 @@ enum StartResult {
 }
 
 fn drive(config: &crate::config::Config, tx: &Sender<UiEvent>) -> Outcome {
+    if config.python.is_some()
+        && let Err(message) = crate::python::ensure_python_stack(config, tx)
+    {
+        return Outcome::Fatal(message);
+    }
     for (name, hook) in [
         ("check_update", &config.hooks.check_update),
         ("install", &config.hooks.install),
@@ -116,18 +144,25 @@ fn run_hook(
     argv: &[String],
 ) -> HookResult {
     let _ = tx.send(UiEvent::HookStarted { name });
-    let mut child = match spawn_hook(config, argv) {
-        Some(child) => child,
-        None => return HookResult::Failed(1),
-    };
+    match run_captured(config, argv, tx) {
+        Some(0) => HookResult::Ok,
+        Some(code) => HookResult::Failed(code),
+        None => HookResult::Failed(1),
+    }
+}
+
+/// 执行一条命令并把输出流式上报为事件，返回退出码；
+/// `None` 表示解析或启动失败（供 python 供给复用同一执行路径）。
+pub(crate) fn run_captured(
+    config: &crate::config::Config,
+    argv: &[String],
+    tx: &Sender<UiEvent>,
+) -> Option<i32> {
+    let mut child = spawn_hook(config, argv)?;
     let readers = collect_output(&mut child, tx);
     let code = wait_code(&mut child);
     join_readers(readers);
-    if code == 0 {
-        HookResult::Ok
-    } else {
-        HookResult::Failed(code)
-    }
+    Some(code)
 }
 
 fn run_start(config: &crate::config::Config, tx: &Sender<UiEvent>, argv: &[String]) -> StartResult {

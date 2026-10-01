@@ -7,6 +7,11 @@ export component App inherits Window {
     in property <string> status-text: "正在准备…";
     in property <string> output-text: "";
     in property <bool> is-error: false;
+    in property <bool> show-progress: false;
+    in property <string> provision-file: "";
+    // 0–1 为确定进度；< 0 表示总量未知（不定式，只刷文字）。
+    in property <float> provision-progress: 0;
+    in property <string> provision-detail: "";
     in property <bool> has-logo: false;
     in property <image> logo;
 
@@ -44,6 +49,38 @@ export component App inherits Window {
             font-size: 14px;
             color: root.is-error ? #c0392b : #333333;
             wrap: word-wrap;
+        }
+
+        if root.show-progress : VerticalLayout {
+            spacing: 4px;
+
+            Text {
+                text: root.provision-file;
+                font-size: 12px;
+                color: #555555;
+                overflow: elide;
+            }
+
+            progress-track := Rectangle {
+                height: 8px;
+                background: #e0e0e0;
+                border-radius: 4px;
+                clip: true;
+
+                if root.provision-progress >= 0 : Rectangle {
+                    width: progress-track.width * min(1, max(0, root.provision-progress));
+                    height: parent.height;
+                    background: #2d7dd2;
+                    border-radius: 4px;
+                }
+            }
+
+            Text {
+                text: root.provision-detail;
+                font-size: 12px;
+                color: #555555;
+                wrap: word-wrap;
+            }
         }
 
         Rectangle {

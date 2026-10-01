@@ -1,5 +1,6 @@
 mod config;
 mod embedded;
+mod python;
 mod runner;
 
 use std::path::{Path, PathBuf};
@@ -119,6 +120,19 @@ fn main() {
                     Some(runtime) => println!("RUNTIME：{runtime}"),
                     None => println!("RUNTIME：未配置"),
                 }
+                match cfg.python.as_ref() {
+                    Some(py) => {
+                        println!(
+                            "python：source={} version={}",
+                            py.source.as_str(),
+                            py.version
+                        );
+                        println!("python package：{}", py.package);
+                        println!("python index：{}", py.redacted_index_url());
+                        println!("python runtime：{}", py.runtime_path);
+                    }
+                    None => println!("python：未启用"),
+                }
                 println!("日志等级：{}", cfg.launcher.log_level);
                 if cfg.launcher.user_editable.is_empty() {
                     println!("用户可改项：无");
@@ -218,6 +232,43 @@ fn main() {
                     }
                     runner::UiEvent::OutputLine { line } => {
                         push_output(&ui, &line);
+                    }
+                    runner::UiEvent::ProvisionStarted { file, total } => {
+                        match total {
+                            Some(t) => {
+                                push_output(&ui, &format!("正在下载 {file}（共 {t} 字节）…"))
+                            }
+                            None => push_output(&ui, &format!("正在下载 {file}…")),
+                        }
+                        ui.set_status_text(format!("正在下载 {file}…").into());
+                        ui.set_show_progress(true);
+                        ui.set_provision_file(file.into());
+                        ui.set_provision_progress(match total {
+                            Some(_) => 0.0,
+                            None => -1.0,
+                        });
+                        ui.set_provision_detail("".into());
+                    }
+                    runner::UiEvent::ProvisionProgress {
+                        file,
+                        downloaded,
+                        total,
+                        bps,
+                    } => {
+                        let ratio = match total {
+                            Some(t) if t > 0 => downloaded as f32 / t as f32,
+                            _ => -1.0,
+                        };
+                        ui.set_provision_file(file.into());
+                        ui.set_provision_progress(ratio);
+                        ui.set_provision_detail(
+                            crate::python::format_detail(downloaded, total, bps).into(),
+                        );
+                    }
+                    runner::UiEvent::ProvisionDone { file } => {
+                        ui.set_show_progress(false);
+                        ui.set_status_text("下载完成，正在准备…".into());
+                        push_output(&ui, &format!("下载完成：{file}"));
                     }
                     runner::UiEvent::AppStarted => {
                         ui.hide().ok();
