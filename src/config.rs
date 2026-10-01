@@ -100,6 +100,8 @@ pub struct Config {
     pub launcher: LauncherConfig,
     pub exe_dir: PathBuf,
     pub log_dir: PathBuf,
+    /// 内建脚本解压目录（外部同名文件缺失时回退）；无回退需求时为 None。
+    pub embedded_dir: Option<PathBuf>,
 }
 
 fn parse_toml_file(path: &Path) -> Result<toml::Value, ConfigError> {
@@ -639,6 +641,7 @@ fn assemble(
     ] {
         if let Some(argv) = hook
             && let Some(program) = argv.first()
+            && !falls_back_to_embedded(exe_dir, program)
         {
             confine_joined(
                 exe_dir,
@@ -668,6 +671,7 @@ fn assemble(
         launcher: launcher_raw,
         exe_dir: exe_dir.to_path_buf(),
         log_dir,
+        embedded_dir: None,
     })
 }
 
@@ -677,7 +681,21 @@ impl Config {
             Some(p) => p.to_path_buf(),
             None => exe_dir.join("launcher.toml"),
         };
-        let main_val = parse_toml_file(&main_path)?;
+        let main_val = match parse_toml_file(&main_path) {
+            Ok(v) => v,
+            Err(e) => {
+                let missing_default = cli_config.is_none() && matches!(e, ConfigError::Io { .. });
+                if !missing_default {
+                    return Err(e);
+                }
+                toml::from_str::<toml::Value>(crate::embedded::DEFAULT_LAUNCHER_TOML).map_err(
+                    |e| ConfigError::Parse {
+                        file: main_path.clone(),
+                        message: format!("built-in default config is broken: {e}"),
+                    },
+                )?
+            }
+        };
         let app_name = main_val
             .as_table()
             .and_then(|t| t.get("app"))
@@ -694,7 +712,17 @@ impl Config {
             }
             _ => None,
         };
-        assemble(exe_dir, &main_path, main_val, user_overlay)
+        assemble(exe_dir, &main_path, main_val, user_overlay).and_then(|mut cfg| {
+            cfg.embedded_dir =
+                materialize_embedded(exe_dir, &main_path, &cfg.app.name, &cfg.hooks)?;
+            Ok(cfg)
+        })
+    }
+
+    pub fn cleanup_embedded(&self) {
+        if let Some(dir) = &self.embedded_dir {
+            let _ = fs::remove_dir_all(dir);
+        }
     }
 
     pub fn resolve_program(&self, raw: &str) -> Result<OsString, ConfigError> {
@@ -714,6 +742,19 @@ impl Config {
             return Ok(OsString::from(expanded));
         }
         let confined = confine_joined(&self.exe_dir, &expanded, false, &ctx, "program")?;
+        if confined.exists() {
+            return Ok(confined.into_os_string());
+        }
+        if crate::embedded::contains(&expanded)
+            && let Some(dir) = &self.embedded_dir
+        {
+            let staged = dir.join(&expanded);
+            if normalize_lexically(&staged).starts_with(normalize_lexically(dir))
+                && staged.is_file()
+            {
+                return Ok(staged.into_os_string());
+            }
+        }
         Ok(confined.into_os_string())
     }
 
@@ -752,6 +793,118 @@ impl Config {
         }
         out
     }
+}
+
+/// 内建回退判定：相对路径、外部同名文件缺失、且内建清单里有 →
+// 跳过外部存在性校验，运行时用解压副本。
+fn falls_back_to_embedded(exe_dir: &Path, program: &str) -> bool {
+    let p = Path::new(program);
+    if p.is_absolute() || is_bare_command(program) {
+        return false;
+    }
+    !exe_dir.join(p).exists() && crate::embedded::contains(program)
+}
+
+const EMBEDDED_DIR_PREFIX: &str = "mdl-embedded-";
+const EMBEDDED_STALE_AFTER_SECS: u64 = 24 * 60 * 60;
+
+fn sanitize_app_name(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if clean.is_empty() {
+        "app".to_string()
+    } else {
+        clean
+    }
+}
+
+/// 收集需要内建回退的脚本名（去重，保持 hook 出现顺序）。
+fn embedded_needed(exe_dir: &Path, hooks: &Hooks) -> Vec<String> {
+    let mut out = Vec::new();
+    for hook in [
+        &hooks.check_update,
+        &hooks.install,
+        &hooks.start,
+        &hooks.end,
+    ] {
+        if let Some(argv) = hook
+            && let Some(program) = argv.first()
+            && falls_back_to_embedded(exe_dir, program)
+            && !out.contains(program)
+        {
+            out.push(program.clone());
+        }
+    }
+    out
+}
+
+/// 清理 crash 遗留的解压目录：只删同应用前缀且 mtime 超过一天的；
+// 当轮与并发实例的目录都很新，不会被误删。
+fn sweep_stale_embedded(root: &Path, sanitized: &str) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    let prefix = format!("{EMBEDDED_DIR_PREFIX}{sanitized}-");
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(&prefix) {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok())
+            .is_some_and(|age| age.as_secs() > EMBEDDED_STALE_AFTER_SECS);
+        if stale {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// 解压本轮需要的内建脚本到临时目录；无回退需求时返回 None，不碰磁盘。
+fn materialize_embedded(
+    exe_dir: &Path,
+    ctx: &Path,
+    app_name: &str,
+    hooks: &Hooks,
+) -> Result<Option<PathBuf>, ConfigError> {
+    let needed = embedded_needed(exe_dir, hooks);
+    if needed.is_empty() {
+        return Ok(None);
+    }
+    let sanitized = sanitize_app_name(app_name);
+    let root = std::env::temp_dir();
+    sweep_stale_embedded(&root, &sanitized);
+    let dir = root.join(format!(
+        "{EMBEDDED_DIR_PREFIX}{sanitized}-{}",
+        std::process::id()
+    ));
+    let io_err = |e: std::io::Error| ConfigError::Io {
+        file: ctx.to_path_buf(),
+        message: format!("embedded staging failed: {e}"),
+    };
+    fs::create_dir_all(&dir).map_err(io_err)?;
+    for name in &needed {
+        let content = crate::embedded::get(name).ok_or_else(|| ConfigError::Invalid {
+            file: ctx.to_path_buf(),
+            message: format!("embedded script vanished: {name}"),
+        })?;
+        let dest = dir.join(name);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(io_err)?;
+        }
+        fs::write(&dest, content).map_err(io_err)?;
+    }
+    Ok(Some(dir))
 }
 
 #[cfg(test)]
@@ -963,5 +1116,79 @@ mod tests {
             Some("")
         );
         let _ = fs::remove_dir_all(&exe);
+    }
+
+    #[test]
+    fn missing_launcher_falls_back_to_builtin_default() {
+        let exe = temp_exe_dir("builtin");
+        let cfg = Config::load(&exe, None).expect("缺 launcher.toml 应回退内建默认");
+        assert_eq!(cfg.app.name, "MyApp");
+        assert!(cfg.hooks.start.is_some(), "内建默认应带 start");
+        assert!(
+            cfg.embedded_dir.is_some(),
+            "内建默认引用的模板脚本外部缺失，应触发解压"
+        );
+        let prog = cfg
+            .resolve_program("scripts/check_update.bat")
+            .expect("内建脚本应可解析");
+        let staged = cfg.embedded_dir.clone().expect("上面已断言为 Some");
+        assert!(
+            prog.to_string_lossy()
+                .starts_with(&staged.to_string_lossy().into_owned()),
+            "应解析到解压目录"
+        );
+        cfg.cleanup_embedded();
+        assert!(!staged.exists(), "清理后解压目录应消失");
+        let _ = fs::remove_dir_all(&exe);
+    }
+
+    #[test]
+    fn external_file_wins_over_embedded() {
+        let exe = temp_exe_dir("extwin");
+        write_file(&exe.join("scripts/check_update.bat"), "@echo external");
+        let main_path = exe.join("launcher.toml");
+        write_file(
+            &main_path,
+            "[app]\nname = \"ExtWinApp\"\n[hooks]\nstart = [\"scripts/check_update.bat\"]\n",
+        );
+        let cfg = load_with_files(&exe, &main_path, None).unwrap();
+        let prog = cfg.resolve_program("scripts/check_update.bat").unwrap();
+        assert_eq!(prog, exe.join("scripts/check_update.bat").into_os_string());
+        let _ = fs::remove_dir_all(&exe);
+    }
+
+    #[test]
+    fn materialize_writes_embedded_content() {
+        let exe = temp_exe_dir("matwrite");
+        let hooks = Hooks {
+            check_update: Some(vec!["scripts/install.py".to_string()]),
+            ..Hooks::default()
+        };
+        let dir = materialize_embedded(&exe, &exe.join("launcher.toml"), "MatApp", &hooks)
+            .expect("解压应成功")
+            .expect("有回退需求应返回目录");
+        let disk = fs::read_to_string(dir.join("scripts/install.py")).unwrap();
+        assert_eq!(disk, crate::embedded::get("scripts/install.py").unwrap());
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&exe);
+    }
+
+    #[test]
+    fn sweep_keeps_fresh_and_foreign_dirs() {
+        let root = temp_exe_dir("sweep");
+        let fresh = root.join("mdl-embedded-SweepApp-999999");
+        let foreign = root.join("something-else-entirely");
+        fs::create_dir_all(&fresh).unwrap();
+        fs::create_dir_all(&foreign).unwrap();
+        sweep_stale_embedded(&root, "SweepApp");
+        assert!(fresh.is_dir(), "很新的同前缀目录不应被清");
+        assert!(foreign.is_dir(), "异前缀目录不应被碰");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sanitize_app_name_replaces_specials() {
+        assert_eq!(sanitize_app_name("My App/1.0"), "My_App_1_0");
+        assert_eq!(sanitize_app_name(""), "app");
     }
 }

@@ -53,6 +53,7 @@ pub fn run_lifecycle(
     }
     drop(tx);
     let _ = dispatcher.join();
+    config.cleanup_embedded();
 }
 
 enum Outcome {
